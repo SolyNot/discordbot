@@ -1,22 +1,18 @@
 import os
 import discord
 from discord.ext import commands
-from discord import app_commands
 
-intents = discord.Intents.default()
-bot = commands.Bot(command_prefix=None, intents=intents)
+bot = commands.Bot(command_prefix=None, intents=discord.Intents.default())
 
 @bot.event
 async def on_ready():
-    print(f"Bot is online! Logged in as {bot.user} (id: {bot.user.id})")
+    print(f"Bot online as {bot.user}")
     await bot.tree.sync()
 
-@bot.tree.command(name="getkey", description="Get the secret key")
+@bot.tree.command(name="getkey", description="Get your key")
 async def getkey(interaction: discord.Interaction):
-    await interaction.response.send_message("solynotissigma")
+    await interaction.response.send_message(
+        f"Hi {interaction.user.name}! Here’s your key:\n```solynotissigma```"
+    )
 
-if __name__ == "__main__":
-    token = os.environ.get("DISCORD_TOKEN")
-    if not token:
-        raise SystemExit("DISCORD_TOKEN env var is missing!")
-    bot.run(token)
+bot.run(os.environ["DISCORD_TOKEN"])
