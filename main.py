@@ -1,4 +1,4 @@
-import os, time, hashlib, json, requests, base64, discord
+import os, time, hashlib, json, base64, requests, discord
 from discord.ext import commands
 
 OWNER = "SolyNot"
@@ -14,14 +14,17 @@ def key():
     return hashlib.sha256(f"{SECRET}{t}".encode()).hexdigest()[:16]
 
 def update_github():
-    content = base64.b64encode(json.dumps({"current_key": key()}).encode()).decode()
-    url = f"https://api.github.com/repos/{OWNER}/{REPO}/contents/{FILE}?ref={BRANCH}"
+    url = f"https://api.github.com/repos/{OWNER}/{REPO}/contents/{FILE}"
     headers = {"Authorization": f"token {GITHUB}"}
+    content = base64.b64encode(json.dumps({"current_key": key()}).encode()).decode()
+
     r = requests.get(url, headers=headers)
     data = {"message":"update key","content":content,"branch":BRANCH}
     if r.status_code == 200:
         data["sha"] = r.json()["sha"]
-    requests.put(f"https://api.github.com/repos/{OWNER}/{REPO}/contents/{FILE}", headers=headers, json=data)
+
+    resp = requests.put(url, headers=headers, json=data)
+    print(resp.status_code, resp.text)
 
 bot = commands.Bot(command_prefix=None, intents=discord.Intents.default())
 
