@@ -73,6 +73,14 @@ async def on_ready():
 
 @bot.tree.command(name="getkey", description="Get current key")
 async def getkey(interaction: discord.Interaction):
-    await interaction.response.send_message(f"Hi {interaction.user.name}! Your key:\n```{current_key()}```")
+    now = int(time.time())
+    interval = 6 * 3600  # 6 hours
+    next_time = ((now // interval) + 1) * interval
+    relative_time = f"<t:{next_time}:R>"
+
+    await interaction.response.send_message(
+        f"Hi {interaction.user.name}! Your key:\n```{current_key()}```\n"
+        f"Next key will generate {relative_time}"
+    )
 
 bot.run(TOKEN)
