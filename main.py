@@ -78,8 +78,14 @@ async def getkey(interaction: discord.Interaction):
     next_time = ((now // interval) + 1) * interval
     relative_time = f"<t:{next_time}:R>"
 
+    key = current_key()
+    pc_copy = f"```{key}```"
+    mobile_copy = f"`{key}`"
+
     await interaction.response.send_message(
-        f"Hi {interaction.user.name}! Your key:\n`{current_key()}`\n"
+        f"Hi {interaction.user.name}! Your key:\n"
+        f"PC copy: {pc_copy}\n"
+        f"Mobile copy: {mobile_copy}\n"
         f"Next key will generate {relative_time}"
     )
 
