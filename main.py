@@ -79,7 +79,7 @@ async def getkey(interaction: discord.Interaction):
     relative_time = f"<t:{next_time}:R>"
 
     await interaction.response.send_message(
-        f"Hi {interaction.user.name}! Your key:\n```{current_key()}```\n"
+        f"Hi {interaction.user.name}! Your key:\n`{current_key()}`\n"
         f"Next key will generate {relative_time}"
     )
 
