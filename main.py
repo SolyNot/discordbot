@@ -163,6 +163,7 @@ class TaskView(View):
         if not v["ok"]:
             await interaction.response.send_message(f"Verification failed: {v['reason']}.", ephemeral=True)
             return
+
         entry["completed"] = True
         entry["completed_at"] = int(time.time())
         entry["message_id_evidence"] = v["message_id"]
@@ -170,10 +171,15 @@ class TaskView(View):
         entry["next_allowed_at"] = int(time.time()) + KEY_ROTATION_INTERVAL
         tasks_state[uid] = entry
         await save_task_state(tasks_state)
+
         key = current_key()
         pc_copy = f"```{key}```"
         mobile_copy = f"`{key}`"
-        await interaction.response.send_message(f"Verification OK. Your key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ Verification successful!\nYour key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}",
+            ephemeral=True
+        )
+
         button.label = "Completed ✅"
         button.disabled = True
         try:
@@ -183,22 +189,27 @@ class TaskView(View):
 
 @bot.tree.command(name="getkey", description="Assign or claim your key by completing a task.")
 async def getkey(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=False)
+    await interaction.response.defer(ephemeral=True)
     tasks_state = load_task_state()
     uid = str(interaction.user.id)
     now_ts = int(time.time())
     entry = tasks_state.get(uid)
+
     if entry:
         if entry.get("key_given"):
             next_allowed = entry.get("next_allowed_at", 0)
             if now_ts < next_allowed:
                 wait = next_allowed - now_ts
-                await interaction.followup.send(f"You already got the key. Next available in {wait//60} minutes.", ephemeral=True)
+                await interaction.followup.send(
+                    f"You already got the key. Next available in {wait//60} minutes.",
+                    ephemeral=True
+                )
                 return
             else:
                 del tasks_state[uid]
                 await save_task_state(tasks_state)
                 entry = None
+
     if entry and entry.get("assigned") and not entry.get("completed"):
         guild = interaction.guild
         channel = guild.get_channel(entry["channel"]) if guild else None
@@ -217,11 +228,18 @@ async def getkey(interaction: discord.Interaction):
             key = current_key()
             pc_copy = f"```{key}```"
             mobile_copy = f"`{key}`"
-            await interaction.followup.send(f"Verification OK. Your key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}", ephemeral=True)
+            await interaction.followup.send(
+                f"✅ Verification successful!\nYour key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}",
+                ephemeral=True
+            )
             return
         else:
-            await interaction.followup.send(f"{interaction.user.mention}, pending task: **{entry['task_text']}**. Verification failed: {v['reason']}.", ephemeral=False)
+            await interaction.followup.send(
+                f"{interaction.user.mention}, pending task: **{entry['task_text']}**\nVerification failed: {v['reason']}.",
+                ephemeral=True
+            )
             return
+
     selected = random.choice(TASKS_POOL)
     task_entry = {
         "assigned": True,
@@ -237,14 +255,12 @@ async def getkey(interaction: discord.Interaction):
     }
     tasks_state[uid] = task_entry
     await save_task_state(tasks_state)
+
     channel_obj = interaction.guild.get_channel(selected["channel"])
     mention = channel_obj.mention if channel_obj else f"<#{selected['channel']}>"
     content = f"Task for {interaction.user.mention}: **{selected['text']}**\nDo it in {mention}, then run `/getkey` or click Verify."
     view = TaskView(assigned_user_id=interaction.user.id, task_entry=task_entry)
-    message = await interaction.followup.send(content, view=view, ephemeral=False)
-    task_entry["task_message_id"] = message.id
-    tasks_state[uid] = task_entry
-    await save_task_state(tasks_state)
+    await interaction.followup.send(content, view=view, ephemeral=True)
 
 if __name__ == "__main__":
     bot.run(TOKEN)
