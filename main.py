@@ -256,10 +256,7 @@ async def getkey(interaction: discord.Interaction):
     mention = channel_obj.mention if channel_obj else f"<#{selected['channel']}>"
     content = f"Task for {interaction.user.mention}: **{selected['text']}**\nDo it in {mention}, then run `/getkey` or click Verify."
     view = TaskView(assigned_user_id=interaction.user.id, task_entry=task_entry)
-    if selected["type"] == "media":
-        await interaction.followup.send(content, view=view)
-    else:
-        await interaction.followup.send(content, view=view, ephemeral=True)
+    await interaction.followup.send(content, view=view)
 
 if __name__ == "__main__":
     bot.run(TOKEN)
