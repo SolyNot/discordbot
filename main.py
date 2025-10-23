@@ -163,7 +163,6 @@ class TaskView(View):
         if not v["ok"]:
             await interaction.response.send_message(f"Verification failed: {v['reason']}.", ephemeral=True)
             return
-
         entry["completed"] = True
         entry["completed_at"] = int(time.time())
         entry["message_id_evidence"] = v["message_id"]
@@ -171,7 +170,6 @@ class TaskView(View):
         entry["next_allowed_at"] = int(time.time()) + KEY_ROTATION_INTERVAL
         tasks_state[uid] = entry
         await save_task_state(tasks_state)
-
         key = current_key()
         pc_copy = f"```{key}```"
         mobile_copy = f"`{key}`"
@@ -179,7 +177,6 @@ class TaskView(View):
             f"✅ Verification successful!\nYour key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}",
             ephemeral=True
         )
-
         button.label = "Completed ✅"
         button.disabled = True
         try:
@@ -255,12 +252,14 @@ async def getkey(interaction: discord.Interaction):
     }
     tasks_state[uid] = task_entry
     await save_task_state(tasks_state)
-
     channel_obj = interaction.guild.get_channel(selected["channel"])
     mention = channel_obj.mention if channel_obj else f"<#{selected['channel']}>"
     content = f"Task for {interaction.user.mention}: **{selected['text']}**\nDo it in {mention}, then run `/getkey` or click Verify."
     view = TaskView(assigned_user_id=interaction.user.id, task_entry=task_entry)
-    await interaction.followup.send(content, view=view, ephemeral=True)
+    if selected["type"] == "media":
+        await interaction.followup.send(content, view=view)
+    else:
+        await interaction.followup.send(content, view=view, ephemeral=True)
 
 if __name__ == "__main__":
     bot.run(TOKEN)
