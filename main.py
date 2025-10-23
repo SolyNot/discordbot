@@ -132,9 +132,10 @@ async def verify_user_posted(channel: discord.TextChannel, user_id: int, after_t
                     return {"ok": True, "reason": "text message", "message_id": msg.id}
 
     if task_type == "discussion":
+        all_msgs = [m async for m in channel.history(limit=200)]
         for msg in user_messages:
             replies = [
-                r for r in (await channel.history(limit=200).flatten())
+                r for r in all_msgs
                 if r.reference and r.reference.message_id == msg.id and r.author.id != user_id
             ]
             if replies:
@@ -173,7 +174,6 @@ class TaskView(View):
             return
 
         if entry.get("key_given"):
-            next_allowed = entry.get("next_allowed_at", 0)
             key = current_key()
             pc_copy = f"```{key}```"
             mobile_copy = f"`{key}`"
@@ -181,22 +181,12 @@ class TaskView(View):
                 if isinstance(child, discord.ui.Button):
                     child.label = "Completed ✅"
                     child.disabled = True
-            if now_ts < next_allowed:
-                wait = next_allowed - now_ts
-                await interaction.response.send_message(
-                    f"You already got the key. Next available in {wait//60} minutes.\n"
-                    f"Your key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}",
-                    view=self,
-                    ephemeral=True
-                )
-                return
-            else:
-                await interaction.response.send_message(
-                    f"You already got this key but here's your copy again:\nPC: {pc_copy}\nMobile: {mobile_copy}",
-                    view=self,
-                    ephemeral=True
-                )
-                return
+            await interaction.response.send_message(
+                f"You already got your key earlier, but here it is again:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}",
+                view=self,
+                ephemeral=True
+            )
+            return
 
         guild = interaction.guild
         channel_id = entry.get("channel")
@@ -235,39 +225,25 @@ class TaskView(View):
 
 @bot.tree.command(name="getkey", description="Assign or claim your key by completing a task.")
 async def getkey(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
     tasks_state = load_task_state()
     uid = str(interaction.user.id)
     now_ts = int(time.time())
     entry = tasks_state.get(uid)
 
-    if entry:
-        if entry.get("key_given"):
-            next_allowed = entry.get("next_allowed_at", 0)
-            key = current_key()
-            pc_copy = f"```{key}```"
-            mobile_copy = f"`{key}`"
-            view = TaskView(assigned_user_id=interaction.user.id, task_entry=entry)
-            for child in view.children:
-                if isinstance(child, discord.ui.Button):
-                    child.label = "Completed ✅"
-                    child.disabled = True
-            if now_ts < next_allowed:
-                wait = next_allowed - now_ts
-                await interaction.followup.send(
-                    f"You already got the key. Next available in {wait//60} minutes.\n"
-                    f"Your key:\nPC: {pc_copy}\nMobile: {mobile_copy}",
-                    view=view,
-                    ephemeral=True
-                )
-                return
-            else:
-                await interaction.followup.send(
-                    f"You already got this key but here’s your copy again:\nPC: {pc_copy}\nMobile: {mobile_copy}",
-                    view=view,
-                    ephemeral=True
-                )
-                return
+    if entry and entry.get("key_given"):
+        key = current_key()
+        pc_copy = f"```{key}```"
+        mobile_copy = f"`{key}`"
+        view = TaskView(assigned_user_id=interaction.user.id, task_entry=entry)
+        for child in view.children:
+            if isinstance(child, discord.ui.Button):
+                child.label = "Completed ✅"
+                child.disabled = True
+        await interaction.response.send_message(
+            f"You already got the key earlier.\nHere’s your copy again:\nPC: {pc_copy}\nMobile: {mobile_copy}",
+            ephemeral=True
+        )
+        return
 
     selected = random.choice(TASKS_POOL)
     task_entry = {
@@ -289,7 +265,7 @@ async def getkey(interaction: discord.Interaction):
     mention = channel_obj.mention if channel_obj else f"<#{selected['channel']}>"
     content = f"Task for {interaction.user.mention}: **{selected['text']}**\nDo it in {mention}, then run `/getkey` or click Verify."
     view = TaskView(assigned_user_id=interaction.user.id, task_entry=task_entry)
-    await interaction.followup.send(content, view=view)
+    await interaction.response.send_message(content, view=view, ephemeral=False)
 
 if __name__ == "__main__":
     bot.run(TOKEN)
