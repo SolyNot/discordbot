@@ -17,9 +17,9 @@ OWNER = "SolyNot"
 REPO = "discordbot"
 FILE = "keys.json"
 BRANCH = "main"
-TOKEN = os.environ["DISCORD_TOKEN"]
-GITHUB = os.environ["GITHUB_TOKEN"]
-SECRET = os.environ["KEY_SECRET"]
+TOKEN = os.environ.get("DISCORD_TOKEN")
+GITHUB = os.environ.get("GITHUB_TOKEN")
+SECRET = os.environ.get("KEY_SECRET")
 TASK_STATE_FILE = "tasks_state.json"
 KEY_ROTATION_INTERVAL = 6 * 3600
 GENERAL_CHANNEL_ID = 1400788529516384349
@@ -88,7 +88,6 @@ async def save_task_state(state):
 TASKS_POOL = [
     {"type": "general", "text": "Post a meaningful message (≥20 chars) in #general", "channel": GENERAL_CHANNEL_ID},
     {"type": "media", "text": "Post an image or media (attachment or image link) in #media", "channel": MEDIA_CHANNEL_ID},
-    {"type": "discussion", "text": "Start a short discussion in #general (post + at least one reply from anyone)", "channel": GENERAL_CHANNEL_ID},
 ]
 
 intents = discord.Intents.default()
@@ -113,10 +112,8 @@ def is_image_url(url: str) -> bool:
 
 async def verify_user_posted(channel: discord.TextChannel, user_id: int, after_ts: int, task_type: str) -> dict:
     after_dt = datetime.fromtimestamp(after_ts, tz=timezone.utc)
-    user_messages = []
     async for msg in channel.history(limit=500, after=after_dt, oldest_first=True):
         if msg.author.id == user_id and not msg.author.bot:
-            user_messages.append(msg)
             content = (msg.content or "").strip()
             if task_type == "media":
                 if msg.attachments:
@@ -130,16 +127,6 @@ async def verify_user_posted(channel: discord.TextChannel, user_id: int, after_t
             elif task_type == "general":
                 if len(content) >= 20 and len(re.findall(r"[A-Za-z\u00C0-\u017F]", content)) >= 5:
                     return {"ok": True, "reason": "text message", "message_id": msg.id}
-
-    if task_type == "discussion":
-        all_msgs = [m async for m in channel.history(limit=200)]
-        for msg in user_messages:
-            replies = [
-                r for r in all_msgs
-                if r.reference and r.reference.message_id == msg.id and r.author.id != user_id
-            ]
-            if replies:
-                return {"ok": True, "reason": "discussion started", "message_id": msg.id}
 
     return {"ok": False, "reason": "no valid message found", "message_id": None}
 
@@ -165,9 +152,6 @@ class TaskView(View):
             return
 
         if now_ts - entry["assigned_at"] > TASK_TIMEOUT and not entry.get("completed"):
-            channel_public = interaction.guild.get_channel(entry["channel"])
-            if channel_public:
-                await channel_public.send(f"⏰ Task timeout for {interaction.user.mention}! Time’s up.")
             del tasks_state[uid]
             await save_task_state(tasks_state)
             await interaction.response.send_message("Task timed out. Please use /getkey again.", ephemeral=True)
@@ -177,10 +161,8 @@ class TaskView(View):
             key = current_key()
             pc_copy = f"```{key}```"
             mobile_copy = f"`{key}`"
-            for child in self.children:
-                if isinstance(child, discord.ui.Button):
-                    child.label = "Completed ✅"
-                    child.disabled = True
+            button.label = "Completed ✅"
+            button.disabled = True
             await interaction.response.send_message(
                 f"You already got your key earlier, but here it is again:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}",
                 view=self,
@@ -230,15 +212,21 @@ async def getkey(interaction: discord.Interaction):
     now_ts = int(time.time())
     entry = tasks_state.get(uid)
 
+    if entry and not entry.get("completed"):
+        if now_ts - entry["assigned_at"] > TASK_TIMEOUT:
+            del tasks_state[uid]
+            await save_task_state(tasks_state)
+        else:
+            channel_obj = interaction.guild.get_channel(entry["channel"])
+            mention = channel_obj.mention if channel_obj else f"<#{entry['channel']}>"
+            content = f"You have an unfinished task!\n**{entry['task_text']}**\nPlease complete it in {mention} and click 'Verify' on the original message."
+            await interaction.response.send_message(content, ephemeral=True)
+            return
+            
     if entry and entry.get("key_given"):
         key = current_key()
         pc_copy = f"```{key}```"
         mobile_copy = f"`{key}`"
-        view = TaskView(assigned_user_id=interaction.user.id, task_entry=entry)
-        for child in view.children:
-            if isinstance(child, discord.ui.Button):
-                child.label = "Completed ✅"
-                child.disabled = True
         await interaction.response.send_message(
             f"You already got the key earlier.\nHere’s your copy again:\nPC: {pc_copy}\nMobile: {mobile_copy}",
             ephemeral=True
@@ -268,4 +256,7 @@ async def getkey(interaction: discord.Interaction):
     await interaction.response.send_message(content, view=view, ephemeral=False)
 
 if __name__ == "__main__":
-    bot.run(TOKEN)
+    if TOKEN:
+        bot.run(TOKEN)
+    else:
+        print("DISCORD_TOKEN environment variable not set.")
