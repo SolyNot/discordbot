@@ -154,10 +154,23 @@ class TaskView(View):
             await interaction.response.send_message("No active task.", ephemeral=True)
             return
         if entry.get("key_given"):
+            next_allowed = entry.get("next_allowed_at", 0)
             key = current_key()
             pc_copy = f"```{key}```"
             mobile_copy = f"`{key}`"
-            await interaction.response.send_message(f"You already got the key. Here it is again privately:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}", ephemeral=True)
+            view = TaskView(assigned_user_id=interaction.user.id, task_entry=entry)
+            for child in view.children:
+                if isinstance(child, discord.ui.Button):
+                    child.label = "Completed ✅"
+                    child.disabled = True
+            if now_ts < next_allowed:
+            wait = next_allowed - now_ts
+            await interaction.followup.send(
+                f"You already got the key. Next available in {wait//60} minutes.\n"
+                f"Your key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}",
+                view=view,
+                ephemeral=True
+            )
             return
         guild = interaction.guild
         channel_id = entry.get("channel")
