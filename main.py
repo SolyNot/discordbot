@@ -263,7 +263,7 @@ async def getkey(interaction: discord.Interaction):
 
     channel_obj = interaction.guild.get_channel(selected["channel"])
     mention = channel_obj.mention if channel_obj else f"<#{selected['channel']}>"
-    content = f"Task for {interaction.user.mention}: **{selected['text']}**\nDo it in {mention}, then run `/getkey` or click Verify."
+    content = f"Task for {interaction.user.mention}: **{selected['text']}**\nDo it in {mention}, then click Verify."
     view = TaskView(assigned_user_id=interaction.user.id, task_entry=task_entry)
     await interaction.response.send_message(content, view=view, ephemeral=False)
 
