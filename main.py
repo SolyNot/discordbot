@@ -186,7 +186,6 @@ class TaskView(View):
 
 @bot.tree.command(name="getkey", description="Assign or claim your key by completing a task.")
 async def getkey(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
     tasks_state = load_task_state()
     uid = str(interaction.user.id)
     now_ts = int(time.time())
@@ -196,9 +195,8 @@ async def getkey(interaction: discord.Interaction):
         if entry.get("key_given"):
             next_allowed = entry.get("next_allowed_at", 0)
             if now_ts < next_allowed:
-                wait = next_allowed - now_ts
-                await interaction.followup.send(
-                    f"You already got the key. Next available in {wait//60} minutes.",
+                await interaction.response.send_message(
+                    f"You already got the key. Next available in {(next_allowed - now_ts)//60} minutes.",
                     ephemeral=True
                 )
                 return
@@ -208,6 +206,7 @@ async def getkey(interaction: discord.Interaction):
                 entry = None
 
     if entry and entry.get("assigned") and not entry.get("completed"):
+        await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
         channel = guild.get_channel(entry["channel"]) if guild else None
         if not channel:
@@ -256,7 +255,7 @@ async def getkey(interaction: discord.Interaction):
     mention = channel_obj.mention if channel_obj else f"<#{selected['channel']}>"
     content = f"Task for {interaction.user.mention}: **{selected['text']}**\nDo it in {mention}, then run `/getkey` or click Verify."
     view = TaskView(assigned_user_id=interaction.user.id, task_entry=task_entry)
-    await interaction.followup.send(content, view=view)
+    await interaction.response.send_message(content, view=view, ephemeral=False)
 
 if __name__ == "__main__":
     bot.run(TOKEN)
