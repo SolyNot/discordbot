@@ -24,7 +24,7 @@ TASK_STATE_FILE = "tasks_state.json"
 KEY_ROTATION_INTERVAL = 6 * 3600
 GENERAL_CHANNEL_ID = 1400788529516384349
 MEDIA_CHANNEL_ID = 1400788552756760636
-TASK_TIMEOUT = 10 * 60  # 10 minutes
+TASK_TIMEOUT = 10 * 60
 
 def current_key():
     t = int(time.time() // KEY_ROTATION_INTERVAL)
@@ -96,7 +96,7 @@ intents.guilds = True
 intents.members = True
 intents.messages = True
 intents.message_content = True
-bot = commands.Bot(command_prefix=None, intents=intents)
+bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 
 @bot.event
 async def on_ready():
