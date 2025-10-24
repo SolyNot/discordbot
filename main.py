@@ -86,7 +86,7 @@ async def save_task_state(state):
             json.dump(state, f, indent=2)
 
 TASKS_POOL = [
-    {"type": "general", "text": "Post a meaningful message (≥20 chars) in #general", "channel": GENERAL_CHANNEL_ID},
+    {"type": "general", "text": "Post a meaningful message (≥20 characters) in #general", "channel": GENERAL_CHANNEL_ID},
     {"type": "media", "text": "Post an image or media (attachment or image link) in #media", "channel": MEDIA_CHANNEL_ID},
 ]
 
