@@ -228,6 +228,28 @@ class TaskView(View):
         button.disabled = True
         await interaction.message.edit(view=self)
 
+    @discord.ui.button(label="Cancel Task", style=discord.ButtonStyle.danger)
+    async def cancel_button(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.assigned_user_id:
+            await interaction.response.send_message("This task isn't for you.", ephemeral=True)
+            return
+        tasks_state = load_task_state()
+        uid = str(interaction.user.id)
+        entry = tasks_state.get(uid)
+        if not entry:
+            await interaction.response.send_message("No active task to cancel.", ephemeral=True)
+            return
+        tasks_state.pop(uid, None)
+        await save_task_state(tasks_state)
+        for child in self.children:
+            try:
+                child.disabled = True
+            except Exception:
+                pass
+        button.label = "Cancelled"
+        await interaction.message.edit(view=self)
+        await interaction.response.send_message("Your task has been cancelled.", ephemeral=True)
+
 class KeyRevealView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -296,7 +318,7 @@ async def instantkey(interaction: discord.Interaction):
     except Exception as e:
         print("Could not send audit log to general:", e)
     try:
-        bot.loop.create_task(bot.loop.run_in_executor(None, update_github_sync))
+        bot.loop.create_task(asyncio.to_thread(update_github_sync))
     except Exception as e:
         print("Failed to schedule github sync:", e)
 
