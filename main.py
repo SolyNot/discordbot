@@ -20,14 +20,13 @@ BRANCH = "main"
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GITHUB = os.environ.get("GITHUB_TOKEN")
 SECRET = os.environ.get("KEY_SECRET")
+OWNER_ID = "1082515981814988800"
 TASK_STATE_FILE = "tasks_state.json"
 KEY_ROTATION_INTERVAL = 6 * 3600
-TASK_TIMEOUT = 150  # 2.5 minutes
+TASK_TIMEOUT = 150
 
-# --- Channel IDs ---
 GENERAL_CHANNEL_ID = 1400788529516384349
 MEDIA_CHANNEL_ID = 1400788552756760636
-# --------------------
 
 def current_key():
     t = int(time.time() // KEY_ROTATION_INTERVAL)
@@ -58,10 +57,8 @@ def put_remote_sync(content, sha=None):
     }
     if sha:
         payload["sha"] = sha
-    
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, method="PUT", headers={"Authorization": f"token {GITHUB}", "Content-Type": "application/json"})
-    
     try:
         with urllib.request.urlopen(req) as response:
             print(response.status, response.read().decode())
@@ -83,7 +80,6 @@ def update_github_sync():
         return
     put_remote_sync(local, sha)
 
-
 _task_lock = asyncio.Lock()
 
 def load_task_state():
@@ -98,7 +94,6 @@ async def save_task_state(state):
         with open(TASK_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
 
-# --- Expanded Task Pool ---
 TASKS_POOL = [
     {"type": "general", "text": "Post a meaningful message (≥20 characters) in #general", "channel": GENERAL_CHANNEL_ID},
     {"type": "media", "text": "Post an image or media (attachment or image link) in #media", "channel": MEDIA_CHANNEL_ID},
@@ -122,16 +117,13 @@ async def check_timeouts():
         now_ts = int(time.time())
         general_channel = bot.get_channel(GENERAL_CHANNEL_ID)
         modified = False
-
         for uid, entry in list(tasks_state.items()):
             if not entry.get("completed") and not entry.get("timed_out") and (now_ts - entry["assigned_at"] > TASK_TIMEOUT):
                 entry["timed_out"] = True
                 modified = True
-                
                 user = bot.get_user(int(uid))
                 if general_channel and user:
                     await general_channel.send(f"{user.mention}, your task has timed out. Use `/getkey` again.")
-
                 try:
                     interaction_channel = bot.get_channel(entry["interaction_channel_id"])
                     if interaction_channel:
@@ -144,10 +136,8 @@ async def check_timeouts():
                     print(f"Task message for user {uid} not found.")
                 except Exception as e:
                     print(f"Error updating timeout message: {e}")
-
         if modified:
             await save_task_state(tasks_state)
-
         await asyncio.sleep(30)
 
 @bot.event
@@ -169,35 +159,27 @@ async def verify_user_posted(channel: discord.TextChannel, user_id: int, after_t
     async for msg in channel.history(limit=500, after=after_dt, oldest_first=True):
         if msg.author.id == user_id and not msg.author.bot:
             content = (msg.content or "").strip()
-            
             if task_type == "media":
                 if msg.attachments or any(is_image_url(p) for p in re.split(r'\s+', content)) or any(e.image for e in msg.embeds):
                     return {"ok": True, "reason": "media found", "message_id": msg.id}
-            
             elif task_type == "general":
                 if len(content) >= 20:
                     return {"ok": True, "reason": "text message", "message_id": msg.id}
-
             elif task_type == "general_reply":
                 if msg.reference and isinstance(msg.reference.resolved, discord.Message):
                     if (msg.created_at - msg.reference.resolved.created_at).total_seconds() > 3600:
                         return {"ok": True, "reason": "valid reply", "message_id": msg.id}
-
             elif task_type == "general_question":
                 if content.endswith('?'):
                     return {"ok": True, "reason": "question asked", "message_id": msg.id}
-
             elif task_type == "media_multiple":
                 image_links = [p for p in re.split(r'\s+', content) if is_image_url(p)]
                 if len(msg.attachments) + len(image_links) >= 2:
                     return {"ok": True, "reason": "multiple images found", "message_id": msg.id}
-            
             elif task_type == "media_reply":
                 if msg.reference:
                     return {"ok": True, "reason": "reply in media", "message_id": msg.id}
-
     return {"ok": False, "reason": "no valid message found", "message_id": None}
-
 
 class TaskView(View):
     def __init__(self, assigned_user_id: int):
@@ -209,38 +191,28 @@ class TaskView(View):
         if interaction.user.id != self.assigned_user_id:
             await interaction.response.send_message("This task isn't for you.", ephemeral=True)
             return
-
         tasks_state = load_task_state()
         uid = str(interaction.user.id)
         entry = tasks_state.get(uid)
-
         if not entry:
             await interaction.response.send_message("No active task.", ephemeral=True)
             return
-        
         if entry.get("timed_out"):
             await interaction.response.send_message("Task timed out. Please use /getkey again.", ephemeral=True)
             return
-
         if entry.get("key_given"):
             key = current_key()
             pc_copy, mobile_copy = f"```{key}```", f"`{key}`"
-            await interaction.response.send_message(
-                f"You already have your key: PC: {pc_copy}, Mobile: {mobile_copy}",
-                ephemeral=True
-            )
+            await interaction.response.send_message(f"You already have your key: PC: {pc_copy}, Mobile: {mobile_copy}", ephemeral=True)
             return
-
         channel = interaction.guild.get_channel(entry["channel"])
         if not channel:
             await interaction.response.send_message("Cannot access the required channel.", ephemeral=True)
             return
-
         v = await verify_user_posted(channel, interaction.user.id, entry["assigned_at"], entry["type"])
         if not v["ok"]:
             await interaction.response.send_message(f"Verification failed: {v['reason']}.", ephemeral=True)
             return
-
         entry.update({
             "completed": True,
             "completed_at": int(time.time()),
@@ -249,40 +221,38 @@ class TaskView(View):
         })
         tasks_state[uid] = entry
         await save_task_state(tasks_state)
-
         key = current_key()
         pc_copy, mobile_copy = f"```{key}```", f"`{key}`"
-        await interaction.response.send_message(
-            f"✅ Verification successful!\nYour key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}",
-            ephemeral=True
-        )
-
+        await interaction.response.send_message(f"✅ Verification successful!\nYour key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}", ephemeral=True)
         button.label = "Completed ✅"
         button.disabled = True
         await interaction.message.edit(view=self)
 
+class KeyRevealView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Show Key", style=discord.ButtonStyle.secondary)
+    async def show_key_button(self, interaction: discord.Interaction, button: Button):
+        key = current_key()
+        await interaction.response.send_message(f"🔑 Your key: ```{key}```", ephemeral=True)
 
 @bot.tree.command(name="getkey", description="Get a task to complete for a key.")
 async def getkey(interaction: discord.Interaction):
     tasks_state = load_task_state()
     uid = str(interaction.user.id)
     entry = tasks_state.get(uid)
-
     if entry and not entry.get("completed") and not entry.get("timed_out"):
         channel_mention = f"<#{entry['channel']}>"
         content = f"You have an unfinished task!\n**{entry['task_text']}**\nPlease complete it in {channel_mention} and click 'Verify' on the original message."
         await interaction.response.send_message(content, ephemeral=True)
         return
-            
     if entry and entry.get("key_given") and not entry.get("timed_out"):
         key = current_key()
         pc_copy, mobile_copy = f"```{key}```", f"`{key}`"
-        await interaction.response.send_message(
-            f"You already got the key. Here it is again:\nPC: {pc_copy}\nMobile: {mobile_copy}",
-            ephemeral=True
-        )
+        view = KeyRevealView()
+        await interaction.response.send_message(f"You already got the key. Here it is again:\nPC: {pc_copy}\nMobile: {mobile_copy}", view=view, ephemeral=True)
         return
-
     selected_task = random.choice(TASKS_POOL)
     task_entry = {
         "type": selected_task["type"],
@@ -293,18 +263,42 @@ async def getkey(interaction: discord.Interaction):
         "timed_out": False,
         "key_given": False,
     }
-    
     channel_mention = f"<#{selected_task['channel']}>"
     content = f"Task for {interaction.user.mention}: **{selected_task['text']}**\nComplete it in {channel_mention}, then click Verify."
     view = TaskView(assigned_user_id=interaction.user.id)
     await interaction.response.send_message(content, view=view, ephemeral=False)
-    
     response_message = await interaction.original_response()
     task_entry["message_id"] = response_message.id
     task_entry["interaction_channel_id"] = interaction.channel_id
     tasks_state[uid] = task_entry
     await save_task_state(tasks_state)
 
+@bot.tree.command(name="instantkey", description="Owner-only: instantly get current key (no task).")
+async def instantkey(interaction: discord.Interaction):
+    allowed = False
+    try:
+        if str(interaction.user.id) == str(OWNER_ID):
+            allowed = True
+    except Exception:
+        allowed = False
+    if not allowed:
+        if interaction.user.name == OWNER:
+            allowed = True
+    if not allowed:
+        await interaction.response.send_message("❌ Only the owner can use `/instantkey`.", ephemeral=True)
+        return
+    key = current_key()
+    await interaction.response.send_message(f"🔐 Instant key:\n```{key}```", ephemeral=True)
+    try:
+        general = bot.get_channel(GENERAL_CHANNEL_ID)
+        if general:
+            await general.send(f"{interaction.user.mention} generated the current key instantly (owner command).")
+    except Exception as e:
+        print("Could not send audit log to general:", e)
+    try:
+        bot.loop.create_task(bot.loop.run_in_executor(None, update_github_sync))
+    except Exception as e:
+        print("Failed to schedule github sync:", e)
 
 if __name__ == "__main__":
     if TOKEN:
