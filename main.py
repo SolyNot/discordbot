@@ -12,6 +12,8 @@ from discord.ui import View, Button
 from datetime import datetime, timezone
 import re
 import urllib.request
+import hmac
+import secrets
 
 OWNER = "SolyNot"
 REPO = "discordbot"
@@ -28,12 +30,26 @@ TASK_TIMEOUT = 150
 GENERAL_CHANNEL_ID = 1400788529516384349
 MEDIA_CHANNEL_ID = 1400788552756760636
 
+KEY_BYTES = 32
+
 def current_key():
+    if not SECRET:
+        raise RuntimeError("KEY_SECRET missing")
     t = int(time.time() // KEY_ROTATION_INTERVAL)
-    return hashlib.sha256(f"{SECRET}{t}".encode()).hexdigest()[:16]
+    msg = str(t).encode()
+    hm = hmac.new(SECRET.encode(), msg, digestmod=hashlib.sha512).digest()
+    raw = hm[:KEY_BYTES]
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 def file_content():
-    return json.dumps({"current_key": current_key()}, separators=(",", ":"), sort_keys=True)
+    now = int(time.time())
+    next_rotation = ((now // KEY_ROTATION_INTERVAL) + 1) * KEY_ROTATION_INTERVAL
+    obj = {
+        "current_key": current_key(),
+        "generated_at": now,
+        "expires_at": next_rotation
+    }
+    return json.dumps(obj, separators=(",", ":"), sort_keys=True)
 
 def get_remote_sync():
     url = f"https://api.github.com/repos/{OWNER}/{REPO}/contents/{FILE}"
@@ -44,8 +60,8 @@ def get_remote_sync():
                 data = json.loads(response.read().decode())
                 raw = base64.b64decode(data["content"]).decode()
                 return raw, data["sha"]
-    except Exception as e:
-        print(f"Error getting remote file: {e}")
+    except Exception:
+        pass
     return None, None
 
 def put_remote_sync(content, sha=None):
@@ -61,9 +77,9 @@ def put_remote_sync(content, sha=None):
     req = urllib.request.Request(url, data=data, method="PUT", headers={"Authorization": f"token {GITHUB}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req) as response:
-            print(response.status, response.read().decode())
-    except Exception as e:
-        print(f"Error putting remote file: {e}")
+            response.read()
+    except Exception:
+        pass
 
 async def updater():
     while True:
@@ -76,7 +92,6 @@ def update_github_sync():
     remote, sha = get_remote_sync()
     local = file_content()
     if remote and remote.strip() == local:
-        print("same key, skip")
         return
     put_remote_sync(local, sha)
 
@@ -97,7 +112,7 @@ async def save_task_state(state):
 TASKS_POOL = [
     {"type": "general", "text": "Post a meaningful message (≥20 characters) in #general", "channel": GENERAL_CHANNEL_ID},
     {"type": "media", "text": "Post an image or media (attachment or image link) in #media", "channel": MEDIA_CHANNEL_ID},
-    {"type": "general_reply", "text": f"Reply to a message older than 1 hour in #general", "channel": GENERAL_CHANNEL_ID},
+    {"type": "general_reply", "text": "Reply to a message older than 1 hour in #general", "channel": GENERAL_CHANNEL_ID},
     {"type": "general_question", "text": "Ask a question in the #general channel", "channel": GENERAL_CHANNEL_ID},
     {"type": "media_multiple", "text": "Post a message with at least 2 images in #media", "channel": MEDIA_CHANNEL_ID},
     {"type": "media_reply", "text": "Reply to a message in the #media channel", "channel": MEDIA_CHANNEL_ID},
@@ -132,25 +147,22 @@ async def check_timeouts():
                         button = Button(label="❌ Timeout", style=discord.ButtonStyle.danger, disabled=True)
                         view.add_item(button)
                         await task_message.edit(view=view)
-                except discord.NotFound:
-                    print(f"Task message for user {uid} not found.")
-                except Exception as e:
-                    print(f"Error updating timeout message: {e}")
+                except Exception:
+                    pass
         if modified:
             await save_task_state(tasks_state)
         await asyncio.sleep(30)
 
 @bot.event
 async def on_ready():
-    print("bot online", bot.user)
     await bot.tree.sync()
     if not getattr(bot, "_updater_started", False):
         bot.loop.create_task(updater())
         bot.loop.create_task(check_timeouts())
         bot._updater_started = True
-    print("slash commands synced and background tasks started")
 
 IMAGE_EXT_RE = re.compile(r"\.(png|jpe?g|gif|webp)(\?.*)?$", re.IGNORECASE)
+
 def is_image_url(url: str) -> bool:
     return bool(IMAGE_EXT_RE.search(url))
 
@@ -202,7 +214,8 @@ class TaskView(View):
             return
         if entry.get("key_given"):
             key = current_key()
-            pc_copy, mobile_copy = f"```{key}```", f"`{key}`"
+            pc_copy = f"```{key}```"
+            mobile_copy = f"`{key}`"
             await interaction.response.send_message(f"You already have your key: PC: {pc_copy}, Mobile: {mobile_copy}", ephemeral=True)
             return
         channel = interaction.guild.get_channel(entry["channel"])
@@ -222,9 +235,10 @@ class TaskView(View):
         tasks_state[uid] = entry
         await save_task_state(tasks_state)
         key = current_key()
-        pc_copy, mobile_copy = f"```{key}```", f"`{key}`"
-        await interaction.response.send_message(f"✅ Verification successful!\nYour key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}", ephemeral=True)
-        button.label = "Completed ✅"
+        pc_copy = f"```{key}```"
+        mobile_copy = f"`{key}`"
+        await interaction.response.send_message(f"Verification successful.\nYour key:\nPC copy: {pc_copy}\nMobile copy: {mobile_copy}", ephemeral=True)
+        button.label = "Completed"
         button.disabled = True
         await interaction.message.edit(view=self)
 
@@ -242,10 +256,7 @@ class TaskView(View):
         tasks_state.pop(uid, None)
         await save_task_state(tasks_state)
         for child in self.children:
-            try:
-                child.disabled = True
-            except Exception:
-                pass
+            child.disabled = True
         button.label = "Cancelled"
         await interaction.message.edit(view=self)
         await interaction.response.send_message("Your task has been cancelled.", ephemeral=True)
@@ -257,7 +268,7 @@ class KeyRevealView(View):
     @discord.ui.button(label="Show Key", style=discord.ButtonStyle.secondary)
     async def show_key_button(self, interaction: discord.Interaction, button: Button):
         key = current_key()
-        await interaction.response.send_message(f"🔑 Your key: ```{key}```", ephemeral=True)
+        await interaction.response.send_message(f"Your key: ```{key}```", ephemeral=True)
 
 @bot.tree.command(name="getkey", description="Get a task to complete for a key.")
 async def getkey(interaction: discord.Interaction):
@@ -266,14 +277,15 @@ async def getkey(interaction: discord.Interaction):
     entry = tasks_state.get(uid)
     if entry and not entry.get("completed") and not entry.get("timed_out"):
         channel_mention = f"<#{entry['channel']}>"
-        content = f"You have an unfinished task!\n**{entry['task_text']}**\nPlease complete it in {channel_mention} and click 'Verify' on the original message."
-        await interaction.response.send_message(content, ephemeral=True)
+        text = f"You have an unfinished task.\n{entry['task_text']}\nComplete it in {channel_mention} and click Verify."
+        await interaction.response.send_message(text, ephemeral=True)
         return
     if entry and entry.get("key_given") and not entry.get("timed_out"):
         key = current_key()
-        pc_copy, mobile_copy = f"```{key}```", f"`{key}`"
+        pc_copy = f"```{key}```"
+        mobile_copy = f"`{key}`"
         view = KeyRevealView()
-        await interaction.response.send_message(f"You already got the key. Here it is again:\nPC: {pc_copy}\nMobile: {mobile_copy}", view=view, ephemeral=True)
+        await interaction.response.send_message(f"You already got the key.\nPC: {pc_copy}\nMobile: {mobile_copy}", view=view, ephemeral=True)
         return
     selected_task = random.choice(TASKS_POOL)
     task_entry = {
@@ -286,7 +298,7 @@ async def getkey(interaction: discord.Interaction):
         "key_given": False,
     }
     channel_mention = f"<#{selected_task['channel']}>"
-    content = f"Task for {interaction.user.mention}: **{selected_task['text']}**\nComplete it in {channel_mention}, then click Verify."
+    content = f"Task for {interaction.user.mention}: {selected_task['text']}\nComplete it in {channel_mention}, then click Verify."
     view = TaskView(assigned_user_id=interaction.user.id)
     await interaction.response.send_message(content, view=view, ephemeral=False)
     response_message = await interaction.original_response()
@@ -302,28 +314,28 @@ async def instantkey(interaction: discord.Interaction):
         if str(interaction.user.id) == str(OWNER_ID):
             allowed = True
     except Exception:
-        allowed = False
+        pass
     if not allowed:
         if interaction.user.name == OWNER:
             allowed = True
     if not allowed:
-        await interaction.response.send_message("❌ Only the owner can use `/instantkey`.", ephemeral=True)
+        await interaction.response.send_message("Only the owner can use this.", ephemeral=True)
         return
     key = current_key()
-    await interaction.response.send_message(f"🔐 Instant key:\n```{key}```", ephemeral=True)
+    await interaction.response.send_message(f"```{key}```", ephemeral=True)
     try:
         general = bot.get_channel(GENERAL_CHANNEL_ID)
         if general:
-            await general.send(f"{interaction.user.mention} generated the current key instantly (owner command).")
-    except Exception as e:
-        print("Could not send audit log to general:", e)
+            await general.send(f"{interaction.user.mention} generated the key instantly.")
+    except Exception:
+        pass
     try:
         bot.loop.create_task(asyncio.to_thread(update_github_sync))
-    except Exception as e:
-        print("Failed to schedule github sync:", e)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     if TOKEN:
         bot.run(TOKEN)
     else:
-        print("DISCORD_TOKEN environment variable not set.")
+        print("DISCORD_TOKEN missing")
