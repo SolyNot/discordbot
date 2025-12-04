@@ -56,8 +56,7 @@ def file_content():
     now = int(time.time())
     # REQUEST FULFILLED: "expires_at" has been removed from this dictionary
     obj = {
-        "current_key": current_key(),
-        "generated_at": now
+        "current_key": current_key()
     }
     return json.dumps(obj, separators=(",", ":"), sort_keys=True)
 
